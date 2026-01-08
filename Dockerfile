@@ -1,39 +1,28 @@
-# Dockerfile para Sanity Studio (build + runtime) usando Node 20.x
-# Ajustado para evitar problemas com Nixpacks e engines incompatíveis.
+# -----------------------------
+# Dockerfile para Sanity Studio 3
+# -----------------------------
 
-# ---------- Build stage ----------
-FROM node:20 AS build
+# 1️⃣ Escolhe uma imagem oficial Node 20
+FROM node:20
 
-# evitar prompts interativos e definir diretório
+# 2️⃣ Define o diretório de trabalho dentro do container
 WORKDIR /app
-ENV NODE_ENV=production
-ENV PATH=/app/node_modules/.bin:$PATH
 
-# copiar apenas package-lock / package.json primeiro para aproveitar cache
+# 3️⃣ Copia apenas os arquivos de dependências para instalar antes do código (melhora cache)
 COPY package*.json ./
 
-# usar npm ci para reprodutibilidade; legacy-peer-deps preservado por compatibilidade
-RUN corepack enable && npm ci --legacy-peer-deps --prefer-offline
+# 4️⃣ Instala dependências
+RUN npm install --legacy-peer-deps
 
-# copiar resto do projeto
+# 5️⃣ Copia todo o restante do código
 COPY . .
 
-# rodar build (garante que seu "npm run build" está definido para rodar `sanity build`)
+# 6️⃣ Build do Sanity Studio
+# Isso cria a pasta .sanity/dist dentro do container
 RUN npm run build
 
-# ---------- Runtime stage ----------
-FROM node:20 AS runtime
+# 7️⃣ Expõe a porta padrão do Sanity Studio (ajuste se usar outra)
+EXPOSE 3333
 
-WORKDIR /app
-
-# instalar um servidor estático mínimo
-RUN npm install -g serve
-
-# copiar artefatos de build — Sanity normalmente gera .sanity/dist
-# ajuste se seu build gerar outro diretório
-COPY --from=build /app/.sanity/dist /app/.sanity/dist
-
-EXPOSE 3000
-
-# comando padrão para servir o build
-CMD ["serve", "-s", ".sanity/dist", "-l", "3000"]
+# 8️⃣ Comando default ao iniciar o container
+CMD ["npm", "start"]
