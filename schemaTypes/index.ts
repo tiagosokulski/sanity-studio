@@ -1,6 +1,8 @@
 import blockContent from './blockContent'
-import category from './category'
+import { defineType, defineArrayMember } from 'sanity'
 import post from './post'
 import author from './author'
+import category from './category'
+import solucao from './solucao'
 
-export const schemaTypes = [post, author, category, blockContent]
+export const schemaTypes = [post, author, category, solucao, blockContent]
