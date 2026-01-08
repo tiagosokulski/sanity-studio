@@ -1,28 +1,20 @@
-# -----------------------------
-# Dockerfile para Sanity Studio 3
-# -----------------------------
+# Usando Node 20 LTS, que é compatível com Sanity
+FROM node:20-bullseye
 
-# 1️⃣ Escolhe uma imagem oficial Node 20
-FROM node:20
-
-# 2️⃣ Define o diretório de trabalho dentro do container
+# Diretório de trabalho dentro do container
 WORKDIR /app
 
-# 3️⃣ Copia apenas os arquivos de dependências para instalar antes do código (melhora cache)
+# Copiando package.json e package-lock.json primeiro para cache do npm
 COPY package*.json ./
 
-# 4️⃣ Instala dependências
+# Instalando dependências
 RUN npm install --legacy-peer-deps
 
-# 5️⃣ Copia todo o restante do código
+# Copiando o restante do projeto
 COPY . .
 
-# 6️⃣ Build do Sanity Studio
-# Isso cria a pasta .sanity/dist dentro do container
-RUN npm run build
-
-# 7️⃣ Expõe a porta padrão do Sanity Studio (ajuste se usar outra)
+# Definindo a porta que o container vai expor
 EXPOSE 3333
 
-# 8️⃣ Comando default ao iniciar o container
-CMD ["npm", "start"]
+# Comando padrão para iniciar o Sanity Studio
+CMD ["./node_modules/.bin/sanity", "start", "--host", "0.0.0.0", "--port", "3333"]
