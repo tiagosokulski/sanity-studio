@@ -1,30 +1,39 @@
-# --- Builder ---
-FROM node:20 AS builder
+# ===== Etapa 1: Build =====
+FROM node:20.19-bullseye AS builder
+
+# Diretório de trabalho
 WORKDIR /app
 
-ARG PREVIEW_ALLOWED_HOSTS="sanity.sokulskilabs.com,localhost,127.0.0.1"
-ENV PREVIEW_ALLOWED_HOSTS=${PREVIEW_ALLOWED_HOSTS}
+# Copia package.json e package-lock.json (para cache de npm)
+COPY package*.json ./
 
-# Copia package.json e package-lock.json primeiro (cache de npm)
-COPY package.json package-lock.json* ./
+# Instala dependências com cache e legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 
-# Instala dependências
-RUN if [ -f package-lock.json ]; then npm ci --legacy-peer-deps; else npm install --legacy-peer-deps; fi
-
-# Copia todo o código
+# Copia todo o código do Studio
 COPY . .
 
-# Remove build antigo
-RUN rm -rf .sanity/dist || true
+# Cria vite.config.js com allowedHosts já configurado
+RUN echo "import { defineConfig } from 'vite'; \
+import sanityVite from 'sanity/vite'; \
+export default defineConfig({ \
+  plugins: [sanityVite()], \
+  preview: { allowedHosts: ['sanity.sokulskilabs.com', 'localhost', '127.0.0.1'] } \
+});" > vite.config.js
 
-# Substitui vite.config.js com allowedHosts (arquivo já versionado, mas sobrescreve apenas allowedHosts)
-RUN echo "import { defineConfig } from 'vite'; import sanityVite from 'sanity/vite'; export default defineConfig({ plugins: [sanityVite()], preview: { allowedHosts: ${PREVIEW_ALLOWED_HOSTS//,/','} } });" > vite.config.js
+# Build do Sanity Studio
+RUN npx sanity build
 
-# Build do Sanity
-RUN npm run build
+# ===== Etapa 2: Production =====
+FROM node:20.19-bullseye-slim
 
-# --- Runner (produção) ---
-FROM nginx:alpine AS runner
-COPY --from=builder /app/.sanity/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+WORKDIR /app
+
+# Copia todo o build do Studio
+COPY --from=builder /app /app
+
+# Expõe porta do Sanity Studio
+EXPOSE 3333
+
+# Comando para iniciar o Sanity Studio em produção e ouvindo 0.0.0.0
+CMD ["npx", "sanity", "start", "--host", "0.0.0.0", "--port", "3333"]
