@@ -1,20 +1,34 @@
-# Usando Node 20 LTS, que é compatível com Sanity
-FROM node:20-bullseye
-
-# Diretório de trabalho dentro do container
+# Stage 0: base
+FROM node:20-alpine AS base
 WORKDIR /app
 
-# Copiando package.json e package-lock.json primeiro para cache do npm
+# Copia package.json e package-lock.json primeiro para aproveitar cache do npm
 COPY package*.json ./
 
-# Instalando dependências
-RUN npm install --legacy-peer-deps
+# Instala dependências com cache
+RUN npm ci --legacy-peer-deps
 
-# Copiando o restante do projeto
+# Stage 1: build
+FROM base AS build
+WORKDIR /app
+
+# Copia tudo
 COPY . .
 
-# Definindo a porta que o container vai expor
+# Build do Sanity Studio
+RUN ./node_modules/.bin/sanity build
+
+# Stage 2: produção
+FROM node:20-alpine AS production
+WORKDIR /app
+
+# Copia apenas arquivos necessários da build
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package*.json ./
+
+# Expose porta
 EXPOSE 3333
 
-# Comando padrão para iniciar o Sanity Studio
+# Comando para rodar o Sanity Studio em produção
 CMD ["./node_modules/.bin/sanity", "start", "--host", "0.0.0.0", "--port", "3333"]
