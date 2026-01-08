@@ -1,34 +1,34 @@
-# Stage 0: base
-FROM node:20-alpine AS base
+# === Stage 1: build ===
+FROM node:20-bullseye AS builder
+
+# Define o diretório de trabalho
 WORKDIR /app
 
-# Copia package.json e package-lock.json primeiro para aproveitar cache do npm
+# Copia apenas o package.json e package-lock.json para instalar dependências
 COPY package*.json ./
 
-# Instala dependências com cache
+# Cache das dependências
 RUN npm ci --legacy-peer-deps
 
-# Stage 1: build
-FROM base AS build
-WORKDIR /app
-
-# Copia tudo
+# Copia todo o código
 COPY . .
 
 # Build do Sanity Studio
 RUN ./node_modules/.bin/sanity build
 
-# Stage 2: produção
-FROM node:20-alpine AS production
+# === Stage 2: runtime ===
+FROM node:20-bullseye
+
 WORKDIR /app
 
-# Copia apenas arquivos necessários da build
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package*.json ./
+# Copia o build do stage anterior
+COPY --from=builder /app /app
 
-# Expose porta
+# Instala produção apenas (opcional)
+RUN npm ci --omit=dev --legacy-peer-deps
+
+# Expõe a porta que o Sanity vai rodar
 EXPOSE 3333
 
-# Comando para rodar o Sanity Studio em produção
+# Comando padrão para rodar o Sanity Studio
 CMD ["./node_modules/.bin/sanity", "start", "--host", "0.0.0.0", "--port", "3333"]
