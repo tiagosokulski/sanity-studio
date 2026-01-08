@@ -1,34 +1,39 @@
-# === Stage 1: build ===
-FROM node:20-bullseye AS builder
+# ===== Etapa 1: Build =====
+FROM node:20.19-bullseye AS builder
 
-# Define o diretório de trabalho
+# Diretório de trabalho
 WORKDIR /app
 
-# Copia apenas o package.json e package-lock.json para instalar dependências
+# Copia package.json e package-lock.json
 COPY package*.json ./
 
-# Cache das dependências
+# Cache do npm para otimizar builds
 RUN npm ci --legacy-peer-deps
 
-# Copia todo o código
+# Copia todo o código do Studio
 COPY . .
 
-# Build do Sanity Studio
-RUN ./node_modules/.bin/sanity build
+# Cria vite.config.js com allowedHosts já configurado
+RUN echo "import { defineConfig } from 'vite'; \
+import sanityVite from 'sanity/vite'; \
+export default defineConfig({ \
+  plugins: [sanityVite()], \
+  preview: { allowedHosts: ['sanity.sokulskilabs.com', 'localhost', '127.0.0.1'] } \
+});" > vite.config.js
 
-# === Stage 2: runtime ===
-FROM node:20-bullseye
+# Build do Sanity Studio
+RUN npx sanity build
+
+# ===== Etapa 2: Production =====
+FROM node:20.19-bullseye-slim
 
 WORKDIR /app
 
-# Copia o build do stage anterior
+# Copia apenas os arquivos necessários do build
 COPY --from=builder /app /app
 
-# Instala produção apenas (opcional)
-RUN npm ci --omit=dev --legacy-peer-deps
-
-# Expõe a porta que o Sanity vai rodar
+# Expõe porta do Sanity Studio
 EXPOSE 3333
 
-# Comando padrão para rodar o Sanity Studio
-CMD ["./node_modules/.bin/sanity", "start", "--host", "0.0.0.0", "--port", "3333"]
+# Comando para iniciar o Sanity Studio em produção e ouvindo 0.0.0.0
+CMD ["npx", "sanity", "start", "--host", "0.0.0.0", "--port", "3333"]
