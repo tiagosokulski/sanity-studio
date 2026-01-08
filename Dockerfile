@@ -1,39 +1,50 @@
-# ===== Etapa 1: Build =====
-FROM node:20.19-bullseye AS builder
-
-# Diretório de trabalho
+# --- Builder (compila o Sanity Studio) ---
+FROM node:20 AS builder
 WORKDIR /app
 
-# Copia package.json e package-lock.json
-COPY package*.json ./
+# Host(s) permitidos para Vite preview (separe por vírgula)
+ARG PREVIEW_ALLOWED_HOSTS="sanity.sokulskilabs.com,localhost,127.0.0.1"
+ENV PREVIEW_ALLOWED_HOSTS=${PREVIEW_ALLOWED_HOSTS}
 
-# Cache do npm para otimizar builds
-RUN npm ci --legacy-peer-deps
+# Copia apenas package*.json para usar cache de camada para npm install
+COPY package.json package-lock.json* ./
 
-# Copia todo o código do Studio
+# Instala dependências (legacy-peer-deps se necessário)
+RUN if [ -f package-lock.json ]; then \
+      npm ci --legacy-peer-deps ; \
+    else \
+      npm install --legacy-peer-deps ; \
+    fi
+
+# Copia todo o projeto
 COPY . .
 
-# Cria vite.config.js com allowedHosts já configurado
-RUN echo "import { defineConfig } from 'vite'; \
-import sanityVite from 'sanity/vite'; \
-export default defineConfig({ \
-  plugins: [sanityVite()], \
-  preview: { allowedHosts: ['sanity.sokulskilabs.com', 'localhost', '127.0.0.1'] } \
-});" > vite.config.js
+# Garante que não exista build antigo
+RUN rm -rf .sanity/dist || true
 
-# Build do Sanity Studio
-RUN npx sanity build
+# Sobrescreve vite.config.js para forçar allowedHosts a partir do ARG/ENV
+# (gera um vite.config.js simples e seguro que importa sanity/vite)
+RUN node -e "\
+  const fs = require('fs'); \
+  const hosts = (process.env.PREVIEW_ALLOWED_HOSTS||'localhost,127.0.0.1').split(',').map(s=>s.trim()); \
+  const content = `import { defineConfig } from 'vite';\nimport sanityVite from 'sanity/vite';\nexport default defineConfig({ plugins: [sanityVite()], preview: { allowedHosts: ${JSON.stringify(hosts)} } });\n`; \
+  fs.writeFileSync('vite.config.js', content); \
+  console.log('Written vite.config.js with hosts:', hosts.join(','));"
 
-# ===== Etapa 2: Production =====
-FROM node:20.19-bullseye-slim
+# Build do Sanity Studio (gera .sanity/dist)
+RUN npm run build
 
-WORKDIR /app
+# --- Production image (serve estático com nginx) ---
+FROM nginx:alpine AS runner
 
-# Copia apenas os arquivos necessários do build
-COPY --from=builder /app /app
+# Remove conteúdo default nginx e copia o build
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=builder /app/.sanity/dist /usr/share/nginx/html
 
-# Expõe porta do Sanity Studio
-EXPOSE 3333
+# (opcional) ajuste headers CORS ou config custom do nginx:
+# COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Comando para iniciar o Sanity Studio em produção e ouvindo 0.0.0.0
-CMD ["npx", "sanity", "start", "--host", "0.0.0.0", "--port", "3333"]
+EXPOSE 80
+
+# Execução padrão
+CMD ["nginx", "-g", "daemon off;"]
